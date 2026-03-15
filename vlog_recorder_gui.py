@@ -14,7 +14,6 @@ import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from PIL import Image, ImageTk
-import mediapipe as mp
 
 
 class GlitchEffect:
@@ -144,11 +143,11 @@ class VlogRecorderGUI:
         self.detection_interval = tk.IntVar(value=3)
         self.confidence = tk.DoubleVar(value=0.3)
 
-        # Initialize models
+        # Initialize models (lazy loading)
         self.object_model = None
         self.face_model = None
-        self.mediapipe_face = None
         self.cap = None
+        self.models_loaded = False
 
         # Frame cache for detection
         self.frame_count = 0
@@ -162,9 +161,11 @@ class VlogRecorderGUI:
         # Setup UI
         self.setup_ui()
 
-        # Start camera
+        # Start camera (models loaded later)
         self.init_camera()
-        self.update_frame()
+
+        # Schedule frame update after a short delay
+        self.root.after(100, self.update_frame)
 
     def setup_ui(self):
         """Setup the GUI layout"""
@@ -383,29 +384,29 @@ class VlogRecorderGUI:
     def apply_settings(self, window):
         """Apply settings and restart camera"""
         window.destroy()
+
+        # Release old resources
         if self.cap:
             self.cap.release()
+
+        # Clear models for reload
+        self.models_loaded = False
+        self.object_model = None
+        self.face_model = None
+
+        # Reinitialize
         self.init_camera()
         messagebox.showinfo("Settings", "Settings applied! Camera restarted.")
 
     def init_camera(self):
-        """Initialize camera and models"""
+        """Initialize camera only (models loaded on first frame)"""
         try:
-            # Load models
-            print(f"Loading YOLO model: {self.model_name.get()}...")
-            self.object_model = YOLO(self.model_name.get())
-
-            print("Loading YOLO-Face model...")
-            self.face_model = YOLO('yolov8-face.pt')
-
-            print("Initializing MediaPipe...")
-            self.mediapipe_face = mp.solutions.face_detection.FaceDetection(
-                model_selection=1,
-                min_detection_confidence=0.5
-            )
-
-            # Open camera
+            # Open camera first
+            print(f"Opening camera {self.camera_id.get()}...")
             self.cap = cv2.VideoCapture(self.camera_id.get())
+
+            if not self.cap.isOpened():
+                raise Exception(f"Failed to open camera {self.camera_id.get()}")
 
             # Set resolution
             width, height = map(int, self.resolution.get().split('x'))
@@ -417,8 +418,37 @@ class VlogRecorderGUI:
             self.resolution_label.config(text=f"Resolution: {self.resolution.get()}")
             self.model_label.config(text=f"Model: {self.model_name.get()}")
 
+            print("Camera initialized. Models will load on first frame.")
+            self.models_loaded = False
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to initialize camera:\n{str(e)}")
+            self.is_running = False
+
+    def load_models(self):
+        """Load detection models (called on first frame)"""
+        if self.models_loaded:
+            return
+
+        try:
+            print("Loading models (this may take a moment)...")
+            self.status_label.config(text="⏳ Loading models...", fg='#ffa726')
+            self.root.update()
+
+            # Load YOLO object detection model
+            print(f"Loading YOLO model: {self.model_name.get()}...")
+            self.object_model = YOLO(self.model_name.get())
+
+            # Load YOLO-Face model
+            print("Loading YOLO-Face model...")
+            self.face_model = YOLO('yolov8-face.pt')
+
+            self.models_loaded = True
+            self.status_label.config(text="✓ Models loaded", fg='#4caf50')
+            print("Models loaded successfully!")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load models:\n{str(e)}")
             self.is_running = False
 
     def detect_faces_yolo(self, frame):
@@ -452,34 +482,43 @@ class VlogRecorderGUI:
 
     def process_frame(self, frame):
         """Process frame with detection and effects"""
+        # Load models on first frame
+        if not self.models_loaded:
+            self.load_models()
+            if not self.models_loaded:  # If loading failed
+                return frame
+
         self.frame_count += 1
         should_detect = (self.frame_count % self.detection_interval.get()) == 0
 
         if should_detect:
-            # Detect faces
-            self.cached_face_boxes = self.detect_faces_yolo(frame)
+            try:
+                # Detect faces
+                self.cached_face_boxes = self.detect_faces_yolo(frame)
 
-            # Detect objects
-            results = self.object_model(frame, conf=self.confidence.get(), verbose=False)
-            self.cached_object_detections = []
+                # Detect objects
+                results = self.object_model(frame, conf=self.confidence.get(), verbose=False)
+                self.cached_object_detections = []
 
-            for result in results:
-                if result.boxes is not None:
-                    for box in result.boxes:
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
-                        conf = float(box.conf[0])
-                        cls = int(box.cls[0])
-                        class_name = self.object_model.names[cls]
+                for result in results:
+                    if result.boxes is not None:
+                        for box in result.boxes:
+                            x1, y1, x2, y2 = map(int, box.xyxy[0])
+                            conf = float(box.conf[0])
+                            cls = int(box.cls[0])
+                            class_name = self.object_model.names[cls]
 
-                        # Skip person class (already detected by face detector)
-                        if class_name.lower() == 'person':
-                            continue
+                            # Skip person class (already detected by face detector)
+                            if class_name.lower() == 'person':
+                                continue
 
-                        self.cached_object_detections.append({
-                            'box': (x1, y1, x2, y2),
-                            'conf': conf,
-                            'class': class_name
-                        })
+                            self.cached_object_detections.append({
+                                'box': (x1, y1, x2, y2),
+                                'conf': conf,
+                                'class': class_name
+                            })
+            except Exception as e:
+                print(f"Detection error: {e}")
 
         # Apply face glitch
         for (x1, y1, x2, y2) in self.cached_face_boxes:
@@ -523,41 +562,47 @@ class VlogRecorderGUI:
         if not self.is_running or not self.cap or not self.cap.isOpened():
             return
 
-        start_time = time.time()
+        try:
+            start_time = time.time()
 
-        ret, frame = self.cap.read()
-        if not ret:
-            self.root.after(10, self.update_frame)
-            return
+            ret, frame = self.cap.read()
+            if not ret:
+                self.root.after(10, self.update_frame)
+                return
 
-        # Process frame
-        frame = self.process_frame(frame)
-        frame = self.add_overlay(frame)
+            # Process frame
+            frame = self.process_frame(frame)
+            frame = self.add_overlay(frame)
 
-        # Write to video if recording
-        if self.is_recording and self.video_writer:
-            self.video_writer.write(frame)
+            # Write to video if recording
+            if self.is_recording and self.video_writer:
+                self.video_writer.write(frame)
 
-        # Convert to PhotoImage for Tkinter
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        img = Image.fromarray(frame_rgb)
+            # Convert to PhotoImage for Tkinter
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(frame_rgb)
 
-        # Resize to fit display
-        display_width = 960
-        display_height = int(frame.shape[0] * (display_width / frame.shape[1]))
-        img = img.resize((display_width, display_height), Image.Resampling.LANCZOS)
+            # Resize to fit display (with safety check)
+            h, w = frame.shape[:2]
+            if w > 0 and h > 0:
+                display_width = 960
+                display_height = int(h * (display_width / w))
+                img = img.resize((display_width, display_height), Image.Resampling.LANCZOS)
 
-        imgtk = ImageTk.PhotoImage(image=img)
-        self.video_label.imgtk = imgtk
-        self.video_label.configure(image=imgtk)
+                imgtk = ImageTk.PhotoImage(image=img)
+                self.video_label.imgtk = imgtk
+                self.video_label.configure(image=imgtk)
 
-        # Calculate FPS
-        frame_time = time.time() - start_time
-        self.frame_times.append(frame_time)
-        if len(self.frame_times) > 30:
-            self.frame_times.pop(0)
-        self.fps = 1.0 / (sum(self.frame_times) / len(self.frame_times)) if self.frame_times else 0
-        self.fps_label.config(text=f"FPS: {self.fps:.1f}")
+            # Calculate FPS
+            frame_time = time.time() - start_time
+            self.frame_times.append(frame_time)
+            if len(self.frame_times) > 30:
+                self.frame_times.pop(0)
+            self.fps = 1.0 / (sum(self.frame_times) / len(self.frame_times)) if self.frame_times else 0
+            self.fps_label.config(text=f"FPS: {self.fps:.1f}")
+
+        except Exception as e:
+            print(f"Frame update error: {e}")
 
         # Schedule next update
         self.root.after(10, self.update_frame)
@@ -631,6 +676,11 @@ class VlogRecorderGUI:
         self.is_running = False
         if self.cap:
             self.cap.release()
+
+        # Clean up models
+        self.object_model = None
+        self.face_model = None
+
         self.root.destroy()
 
 
