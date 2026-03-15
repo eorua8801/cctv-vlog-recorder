@@ -13,6 +13,7 @@ Real-time CCTV-style vlog recorder with object detection and face anonymization 
 - ⚡ **Multiple Detection Methods** - YOLO-Face, MediaPipe, or Hybrid
 - 🎨 **Customizable Effects** - 8+ different glitch/mosaic styles
 - 💾 **Video Recording** - MP4 output with configurable resolution
+- 🖥️ **GUI Application** - Easy-to-use camera app interface with one-click recording
 
 ## Hardware Requirements
 
@@ -25,7 +26,7 @@ Real-time CCTV-style vlog recorder with object detection and face anonymization 
 ### 1. Install Dependencies
 
 ```bash
-pip3 install ultralytics opencv-python mediapipe huggingface_hub
+pip3 install ultralytics opencv-python mediapipe huggingface_hub pillow
 ```
 
 ### 2. Download YOLO Face Detection Model
@@ -52,20 +53,42 @@ chmod +x vlog_recorder.py
 
 ## Quick Start
 
-### Basic Usage (Preview Only)
+### GUI Mode (Recommended - Camera App Style)
 
+**Launch the GUI application**:
+```bash
+python3 vlog_recorder_gui.py
+```
+
+Or double-click the desktop launcher: **CCTV Vlog Recorder**
+
+**Features**:
+- 📹 Real-time preview with all effects applied
+- ⏺️ One-click start/stop recording
+- 📷 Screenshot button
+- ⚙️ Settings panel for camera, model, and effect selection
+- 📊 Live FPS and status display
+- 💾 Auto-generated filenames with timestamp
+
+**Controls**:
+- Click **"⏺ START RECORDING"** to begin recording
+- Click **"⏹ STOP RECORDING"** to save video
+- Click **"📷 Screenshot"** to capture a frame
+- Click **"⚙ Settings"** to adjust camera/detection settings
+
+### Command-Line Mode (Advanced)
+
+**Basic Usage (Preview Only)**:
 ```bash
 python3 vlog_recorder.py --camera 1
 ```
 
-### Record with Auto-Generated Filename
-
+**Record with Auto-Generated Filename**:
 ```bash
 python3 vlog_recorder.py --camera 1 --record
 ```
 
-### Headless Mode (SSH/Remote)
-
+**Headless Mode (SSH/Remote)**:
 ```bash
 python3 vlog_recorder.py --headless --camera 1 --duration 60 --output my_vlog.mp4
 ```
@@ -215,8 +238,13 @@ python3 vlog_recorder.py \
   --record
 ```
 
-## Keyboard Controls (GUI Mode)
+## Keyboard Controls
 
+### GUI Application
+- Use on-screen buttons for all controls
+- Window close button prompts to save recording if in progress
+
+### Command-Line Mode
 - `q` - Quit
 - `s` - Save screenshot
 
@@ -243,10 +271,12 @@ python3 vlog_recorder.py \
 
 ```
 .
-├── vlog_recorder.py          # Main script
+├── vlog_recorder_gui.py      # GUI application (recommended)
+├── vlog_recorder.py          # Command-line version
 ├── yolov8-face.pt            # YOLO face detection model
 ├── yolo11n.pt                # YOLO object detection model (auto-downloaded)
 ├── yolov8n.pt                # Alternative YOLO model (auto-downloaded)
+├── CCTV_Vlog_Recorder.desktop # Desktop launcher
 ├── README.md                 # This file
 └── vlog_recorder_README.md   # Detailed Korean documentation
 ```
@@ -305,6 +335,15 @@ MIT License - See LICENSE file for details
 Contributions welcome! Please feel free to submit a Pull Request.
 
 ## Changelog
+
+### v1.1.0 (2026-03-15)
+- **NEW**: GUI application with camera app-style interface
+- **NEW**: One-click start/stop recording
+- **NEW**: Real-time preview with settings panel
+- **NEW**: Desktop launcher for easy access
+- **IMPROVED**: Live FPS and status monitoring
+- **IMPROVED**: Auto-generated filenames
+- **IMPROVED**: Screenshot functionality in GUI
 
 ### v1.0.0 (2026-03-15)
 - Initial release
